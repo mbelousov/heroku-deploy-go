@@ -1,79 +1,121 @@
 #!/bin/bash
-REPO_URL=$1
-APP_NAME=$2
-PROCFILE=$3
-CONFIG=$4
-IGNORE=$5
 
+function output {
+	echo "----> "$1
+}
+function pathcombine {
+	if [[ "$1" == *\\ ]]
+	then
+	    echo $1$2
+	else
+	    echo $1"/"$2
+	fi	
+}
 
-if test -z "$REPO_URL"; then
-	echo "Repository URL is empty"
+REPO=$1
+REPO_MODE=$2
+APP_NAME=$3
+PROCFILE=$4
+CONFIG=$5
+IGNORE=$6
+BUILDPACK=$7
+DEFAULT_BUILDPACK="https://github.com/kr/heroku-buildpack-go"
+DEFAULT_REPO_MODE='remote'
+echo ""
+
+if test -z "$REPO_MODE"; then
+	output 'Mode is not provided. Using default..'
+	REPO_MODE=$DEFAULT_REPO_MODE
+fi
+if [[ $REPO_MODE != "remote" ]] && [[ $REPO_MODE != "local" ]] ; then
+	output "Invalid repo mode. Using default.."
+	REPO_MODE=$DEFAULT_REPO_MODE
+fi
+output 'Mode: '$REPO_MODE
+if [[ $REPO_MODE == "local" ]]; then
+	if test -z "$GOPATH"; then
+		output "GOPATH is empty"
+		exit
+	fi
+	REPO_URL=$(pathcombine $GOPATH src/$REPO)
+else
+	REPO_URL="https://"$REPO
+fi
+output 'Repository: '$REPO_URL
+if test -z "$REPO"; then
+	output "Repository is not provided"
 	exit
 fi
 if test -z "$APP_NAME"; then
-	echo "Heroku App name is empty"
+	output "Heroku App name is empty"
 	exit
 fi
 
+
+if test -z "$BUILDPACK"; then
+	BUILDPACK=$DEFAULT_BUILDPACK
+	output "Buildpack is not provided. Using the default buildpack.."
+fi
+output "Buildpack: "$BUILDPACK
+
 CURRENT=$(date +%s)
 REPO_NAME=$(echo ${REPO_URL##*/} | awk -F '.' '{ print $1 }')
-REPO_PATH='.deploy/'$REPO_NAME
+DEPLOY_DIR='.deploy'
+REPO_PATH=$DEPLOY_DIR"/"$REPO_NAME
+
+LOCAL_REPO=$(pathcombine $GOPATH src/$REPO)
+if [ ! -d "$DEPLOY_DIR" ]; then
+	mkdir "$DEPLOY_DIR"
+fi
+
+output 'Removing '$REPO_PATH'..'
+rm -rf $REPO_PATH
 
 if [ ! -d "$REPO_PATH" ]; then
-	echo 'Cloning into '$REPO_PATH'..'
+	output 'Cloning into '$REPO_PATH'..'
 	git clone $REPO_URL $REPO_PATH
 	if [[ ! $? = 0 ]]; then
 		exit
 	fi
-fi
+fi	
 
-echo 'Change dir to '$REPO_PATH
+output 'Change dir to '$REPO_PATH
 cd $REPO_PATH
-echo 'Fetching..'
+output 'Fetching..'
 git fetch origin
-echo 'Reseting to origin..'
+output 'Reseting to origin..'
 git reset --hard origin/master && git clean -fd
 
-echo 'Pulling from origin..'
+output 'Pulling from origin..'
 git pull --force origin master
 if [[ ! $? = 0 ]]; then
 	exit
 fi
 
-echo 'Heroku initialization..'
+output 'Heroku initialization..'
 heroku login
-echo 'Checking heroku remote..'
-git remote show heroku #git ls-remote --exit-code heroku
+output 'Checking heroku remote..'
+git remote show heroku > /dev/null 2>&1 #git ls-remote --exit-code heroku
 if [[ ! $? = 0 ]]; then
-	echo 'Adding heroku remote..'
+	output 'Adding heroku remote..'
 	heroku git:remote -a $APP_NAME
 	if [[ ! $? = 0 ]]; then
 		exit
 	fi
 fi
-echo 'Setting configurations..'
-heroku config:set BUILDPACK_URL=https://github.com/kr/heroku-buildpack-go.git $CONFIG
+output 'Setting configurations..'
+heroku config:set BUILDPACK_URL=$BUILDPACK $CONFIG
 
-#echo 'Checking heroku remote..'
-#git show-ref --verify --quiet refs/remotes/heroku/master
-#if [[ $? = 0 ]]; then
-#	echo 'Pulling heroku remote..'
-#	git pull heroku master
-#	if [[ ! $? = 0 ]]; then
-#		exit
-#	fi
-#fi
-
-echo 'Creating Procfile..'
+output 'Creating Procfile..'
 echo $PROCFILE > Procfile
-echo 'Getting dependencies..'
+output 'Getting dependencies..'
 godep save
 if [[ ! $? = 0 ]]; then
-	exit
+	echo $REPO > .godir
 fi
 
 if ! test -z "$IGNORE"; then
-	echo 'Updating index..'
+	output 'Updating index..'
 	printf "\n"$IGNORE"\n" >> .gitignore
 	git rm -r --cached .
 fi
@@ -81,13 +123,13 @@ fi
 git add -A .
 git commit -m "heroku procfile and dependencies"
 
-echo 'Pushing heroku remote..'
+output 'Pushing heroku remote..'
 git push --force heroku master
 if [[ ! $? = 0 ]]; then
 	exit
 fi
 
-#echo 'Scaling..'
+#output 'Scaling..'
 #heroku ps:scale web=1
 heroku ps
 
@@ -95,6 +137,6 @@ heroku open
 
 
 #cd '../../'
-#echo 'Removing '$REPO_PATH'..'
+#output 'Removing '$REPO_PATH'..'
 #rm -rf $REPO_PATH
 
