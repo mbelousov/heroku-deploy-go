@@ -1,5 +1,6 @@
 # Go app deployment tool for Heroku
-Bash script for [Go](http://golang.org/) app deployment to [Heroku](http://heroku.com/)
+Bash script for [Go](http://golang.org/) app deployment to [Heroku](http://heroku.com/).
+
 ===================================
 ## Usage
 This tool should be called from app directory.
